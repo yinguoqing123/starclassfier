@@ -48,56 +48,63 @@ def get_moving_windows_features(data, flag='train'):
             tmp_abs = data_abs.iloc[:, i * window_size:(i + 1) * window_size].copy()
             tmp_abs_big0 = data_abs_big0.iloc[:, i * window_size:(i + 1) * window_size].copy()
 
-            data_[str(i) + '_' + str(window_size) + '_mean'] = tmp.mean(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_max'] = tmp.max(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_min'] = tmp.min(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_var'] = tmp.var(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_median'] = tmp.median(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_sum'] = tmp.sum(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_skew'] = tmp.skew(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_kurt'] = tmp.kurt(axis=1).values
+            data_[str(i) + '_' + str(window_size) + '_mean'] = tmp.mean(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_max'] = tmp.max(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_min'] = tmp.min(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_var'] = tmp.var(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_median'] = tmp.median(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_sum'] = tmp.sum(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_skew'] = tmp.skew(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_kurt'] = tmp.kurt(axis=1).astype(np.float32).values
 
             data_[str(i) + '_' + str(window_size) + '_range'] = data_[str(i) + '_' + str(window_size) + '_max'] - data_[
                 str(i) + '_' + str(window_size) + '_min']
             data_[str(i) + '_' + str(window_size) + '_argmax'] = tmp.idxmax(axis=1).values
+            data_[str(i) + '_' + str(window_size) + '_argmax'] = data_[str(i) + '_' + str(window_size) + '_argmax']\
+                .apply(lambda x: str(x)[2:]).astype(np.int32)
             data_[str(i) + '_' + str(window_size) + '_argmin'] = tmp.idxmin(axis=1).values
+            data_[str(i) + '_' + str(window_size) + '_argmin'] = data_[str(i) + '_' + str(window_size) + '_argmin']\
+                .apply(lambda x:str(x)[2:]).apply(np.int32)
 
             # 一阶差分统计
-            data_[str(i) + '_' + str(window_size) + '_diffmean'] = tmp_diff.mean(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_diffmax'] = tmp_diff.max(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_diffmin'] = tmp_diff.min(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_diffvar'] = tmp_diff.var(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_diffmedian'] = tmp_diff.median(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_diffsum'] = tmp_diff.sum(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_diffskew'] = tmp_diff.skew(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_diffkurt'] = tmp_diff.kurt(axis=1).values
+            data_[str(i) + '_' + str(window_size) + '_diffmean'] = tmp_diff.mean(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_diffmax'] = tmp_diff.max(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_diffmin'] = tmp_diff.min(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_diffvar'] = tmp_diff.var(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_diffmedian'] = tmp_diff.median(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_diffsum'] = tmp_diff.sum(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_diffskew'] = tmp_diff.skew(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_diffkurt'] = tmp_diff.kurt(axis=1).astype(np.float32).values
 
             data_[str(i) + '_' + str(window_size) + '_diffrange'] = data_[str(i) + '_' + str(window_size) + '_diffmax'] \
                                                                     - data_[str(i) + '_' + str(window_size) + '_diffmin']
             data_[str(i) + '_' + str(window_size) + '_diffargmax'] = tmp_diff.idxmax(axis=1).values
+            data_[str(i) + '_' + str(window_size) + '_diffargmax'] = data_[str(i) + '_' + str(window_size) + '_diffargmax']\
+                .apply(lambda x:str(x)[2:]).astype(np.int32)
             data_[str(i) + '_' + str(window_size) + '_diffargmin'] = tmp_diff.idxmin(axis=1).values
-
+            data_[str(i) + '_' + str(window_size) + '_diffargmin'] = data_[str(i) + '_' + str(window_size) + '_diffargmin']\
+                .apply(lambda x:str(x)[2:]).astype(np.int32)
             # 大于0的个数
-            data_[str(i) + '_' + str(window_size) + '_abovezero'] = tmp_big0.sum(axis=1).values
+            data_[str(i) + '_' + str(window_size) + '_abovezero'] = tmp_big0.sum(axis=1).astype(np.float32).values
 
             # abs
-            data_[str(i) + '_' + str(window_size) + '_absmean'] = tmp_abs.mean(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_absmax'] = tmp_abs.max(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_absmin'] = tmp_abs.min(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_absvar'] = tmp_abs.var(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_absmedian'] = tmp_abs.median(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_abssum'] = tmp_abs.sum(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_absskew'] = tmp_abs.skew(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_abskurt'] = tmp_abs.kurt(axis=1).values
+            data_[str(i) + '_' + str(window_size) + '_absmean'] = tmp_abs.mean(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_absmax'] = tmp_abs.max(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_absmin'] = tmp_abs.min(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_absvar'] = tmp_abs.var(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_absmedian'] = tmp_abs.median(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_abssum'] = tmp_abs.sum(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_absskew'] = tmp_abs.skew(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_abskurt'] = tmp_abs.kurt(axis=1).astype(np.float32).values
 
             # abs_big0
-            data_[str(i) + '_' + str(window_size) + '_abs_big0_mean'] = tmp_abs_big0.mean(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_abs_big0_max'] = tmp_abs_big0.max(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_abs_big0_min'] = tmp_abs_big0.min(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_abs_big0_var'] = tmp_abs_big0.var(axis=1).values
-            # data_[str(i)+'_'+str(window_size)+'_abs_big0_median'] = tmp_abs_big0.median(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_abs_big0_skew'] = tmp_abs_big0.skew(axis=1).values
-            data_[str(i) + '_' + str(window_size) + '_abs_big0_kurt'] = tmp_abs_big0.kurt(axis=1).values
+            data_[str(i) + '_' + str(window_size) + '_abs_big0_mean'] = tmp_abs_big0.mean(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_abs_big0_max'] = tmp_abs_big0.max(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_abs_big0_min'] = tmp_abs_big0.min(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_abs_big0_var'] = tmp_abs_big0.var(axis=1).astype(np.float32).values
+            # data_[str(i)+'_'+str(window_size)+'_abs_big0_median'] = tmp_abs_big0.median(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_abs_big0_skew'] = tmp_abs_big0.skew(axis=1).astype(np.float32).values
+            data_[str(i) + '_' + str(window_size) + '_abs_big0_kurt'] = tmp_abs_big0.kurt(axis=1).astype(np.float32).values
 
             mean_cols.append(str(i) + '_' + str(window_size) + '_mean')
             max_cols.append(str(i) + '_' + str(window_size) + '_max')
@@ -142,22 +149,24 @@ def get_moving_windows_features(data, flag='train'):
         for key in second_cols.keys():
             cols = second_cols[key]
 
-            data_[key + '_mean'] = data_[cols].mean(axis=1).values
-            data_[key + '_max'] = data_[cols].max(axis=1).values
-            data_[key + '_min'] = data_[cols].min(axis=1).values
-            data_[key + '_var'] = data_[cols].var(axis=1).values
-            data_[key + '_median'] = data_[cols].median(axis=1).values
-            data_[key + '_sum'] = data_[cols].sum(axis=1).values
-            data_[key + '_skew'] = data_[cols].skew(axis=1).values
-            data_[key + '_kurt'] = data_[cols].kurt(axis=1).values
+            data_[key + '_mean'] = data_[cols].mean(axis=1).astype(np.float32).values
+            data_[key + '_max'] = data_[cols].max(axis=1).astype(np.float32).values
+            data_[key + '_min'] = data_[cols].min(axis=1).astype(np.float32).values
+            data_[key + '_var'] = data_[cols].var(axis=1).astype(np.float32).values
+            data_[key + '_median'] = data_[cols].median(axis=1).astype(np.float32).values
+            data_[key + '_sum'] = data_[cols].sum(axis=1).astype(np.float32).values
+            data_[key + '_skew'] = data_[cols].skew(axis=1).astype(np.float32).values
+            data_[key + '_kurt'] = data_[cols].kurt(axis=1).astype(np.float32).values
 
-            data_[key + '_diffmean'] = data_[cols].diff(1, axis=1).mean(axis=1).values
-            data_[key + '_diffmax'] = data_[cols].diff(1, axis=1).max(axis=1).values
-            data_[key + '_diffmin'] = data_[cols].diff(1, axis=1).min(axis=1).values
-            data_[key + '_diffvar'] = data_[cols].diff(1, axis=1).var(axis=1).values
-            data_[key + '_diffskew'] = data_[cols].diff(1, axis=1).skew(axis=1).values
-            data_[key + '_diffkurt'] = data_[cols].diff(1, axis=1).kurt(axis=1).values
+            data_[key + '_diffmean'] = data_[cols].diff(1, axis=1).mean(axis=1).astype(np.float32).values
+            data_[key + '_diffmax'] = data_[cols].diff(1, axis=1).max(axis=1).astype(np.float32).values
+            data_[key + '_diffmin'] = data_[cols].diff(1, axis=1).min(axis=1).astype(np.float32).values
+            data_[key + '_diffvar'] = data_[cols].diff(1, axis=1).var(axis=1).astype(np.float32).values
+            data_[key + '_diffskew'] = data_[cols].diff(1, axis=1).skew(axis=1).astype(np.float32).values
+            data_[key + '_diffkurt'] = data_[cols].diff(1, axis=1).kurt(axis=1).astype(np.float32).values
+
     data_.to_pickle(f'{flag}_feature.pkl')
+
 
 
 train_dtypes = {}
@@ -187,6 +196,8 @@ train_data = train_data.set_index('id').drop(columns='answer')
 get_moving_windows_features(train_data)
 train_end_time = time.time()
 print('训练集处理时间为{}分钟'.format((train_end_time-start_time)/60))
+del train_data
+gc.collect()
 val_data = val_data.set_index('id')
 get_moving_windows_features(val_data, flag='val')
 print('验证集处理时间为{}分钟'.format((time.time()-train_end_time)/60))
