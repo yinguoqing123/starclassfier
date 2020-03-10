@@ -12,6 +12,8 @@ from sklearn.model_selection import KFold, train_test_split, StratifiedKFold, Ra
 from sklearn.metrics import f1_score, roc_auc_score
 from bayes_opt import BayesianOptimization
 import argparse
+import warnings
+warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--search", help="search hyper parameters or not")
@@ -33,6 +35,8 @@ if args.search:
 
 train_set, valid_set = train_test_split(train_data, test_size=0.2, stratify=train_data.answer)
 
+#train_set.loc[:, features] = train_set[features].astype(np.float32)
+#valid_set.loc[:, features] = valid_set[features].astype(np.float32)
 
 def lgb_eval(num_leaves,  max_depth, lambda_l2,lambda_l1, min_child_samples, bagging_fraction,
              feature_fraction, min_child_weight):
@@ -78,9 +82,9 @@ if  args.search=='random':
                   'reg_alpha': np.arange(0.0, 2, 0.1), 'reg_lambda': np.arange(0.0, 1, 0.1)}
     clf= lgb.LGBMClassifier()
     fit_rounds = 300
-    grid = RandomizedSearchCV(clf, param_dict, cv=3, scoring='neg_log_loss', n_iter=fit_rounds, n_jobs=16)
+    grid = RandomizedSearchCV(clf, param_dict, cv=3, scoring='neg_log_loss', n_iter=fit_rounds, n_jobs=32)
     fit_begin = time.time()
-    grid.fit(train_data[features], train_data.answer)
+    grid.fit(train_set[features], train_set.answer)
     model_lgb = grid.best_estimator_
     fit_end = time.time()
     print("参数搜索轮数：{}，总训练时间{}分钟".format(fit_rounds, (fit_end - fit_begin) / 60))
