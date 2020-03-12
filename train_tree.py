@@ -19,21 +19,20 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--search", help="search hyper parameters or not")
 args = parser.parse_args()
 
-train_feature = pd.read_pickle('train_feature.pkl')
-train_label = pd.read_pickle('train_label.pkl')
+train_data = pd.read_pickle('train_feature.pkl')
 test_data = pd.read_pickle('val_feature.pkl')
 
-train_data = train_feature.merge(train_label, on='id', how='left')
-features = train_feature.columns.tolist()
+features = train_data.columns.tolist()
 features.remove('id')
-del train_feature
-gc.collect()
+features.remove('label')
+
 
 # 取1/5的数据用于调参
 if args.search:
-    _, train_data = train_test_split(train_data, test_size=0.2, stratify=train_data.answer)
+    _, train_data = train_test_split(train_data, test_size=0.2, stratify=train_data.label)
 
-train_set, valid_set = train_test_split(train_data, test_size=0.2, stratify=train_data.answer)
+train_set, valid_set = train_test_split(train_data, test_size=0.2, stratify=train_data.label)
+print('train set 样本量：', train_set.shape[0])
 
 #train_set.loc[:, features] = train_set[features].astype(np.float32)
 #valid_set.loc[:, features] = valid_set[features].astype(np.float32)
@@ -56,7 +55,7 @@ def lgb_eval(num_leaves,  max_depth, lambda_l2,lambda_l1, min_child_samples, bag
         "seed": 2020,
         "verbosity": -1
     }
-    train_df = lgb.Dataset(train_set[features], train_set.answer)
+    train_df = lgb.Dataset(train_set[features], train_set.label)
     scores = lgb.cv(params, train_df, num_boost_round=1000, early_stopping_rounds=30, verbose_eval=False,
                      nfold=3)['multi_logloss-mean'][-1]
     return scores
@@ -82,16 +81,16 @@ if  args.search=='random':
                   'reg_alpha': np.arange(0.0, 2, 0.1), 'reg_lambda': np.arange(0.0, 1, 0.1)}
     clf= lgb.LGBMClassifier()
     fit_rounds = 300
-    grid = RandomizedSearchCV(clf, param_dict, cv=3, scoring='neg_log_loss', n_iter=fit_rounds, n_jobs=32)
+    grid = RandomizedSearchCV(clf, param_dict, cv=3, scoring='neg_log_loss', n_iter=fit_rounds, n_jobs=4)
     fit_begin = time.time()
-    grid.fit(train_set[features], train_set.answer)
+    grid.fit(train_set[features], train_set.label)
     model_lgb = grid.best_estimator_
     fit_end = time.time()
     print("参数搜索轮数：{}，总训练时间{}分钟".format(fit_rounds, (fit_end - fit_begin) / 60))
-    test_data['answer'] = model_lgb.predict(test_data[features])
+    test_data['label'] = model_lgb.predict(test_data[features])
     print("模型最佳参数：")
     print(grid.best_params_)
-    test_data[['id', 'answer']].to_pickle('test_answer.pkl')
+    test_data[['id', 'label']].to_csv('test_answer.csv', index=False)
 elif args.search=='beyas':
     result = param_tuning(5, 40)
     print('模型最佳参数AUC:{}'.format(result.max['target']))
@@ -103,9 +102,11 @@ elif args.search=='beyas':
     print('再次精调后最佳AUC:{}'.format(result.max['target']))
     print('再次精调后最佳参数：', '\n', result.max['params'])
 else:
-    model_lgb = lgb.LGBMClassifier(n_estimators=1000, max_depth=7, num_leaves=40, n_jobs=-1, learning_rate=0.15,
-                                   colsample_bytree=0.8, subsample=0.8, reg_lambda=0.3, reg_alpha=1.6,
-                                   min_child_weight=6,
+    model_lgb = lgb.LGBMClassifier(n_estimators=950, max_depth=9, num_leaves=15, n_jobs=-1, learning_rate=0.05,
+                                   colsample_bytree=0.3, subsample=0.6, reg_lambda=0.9, reg_alpha=1.3,
+                                   min_child_weight=5,
                                    random_state=2019)
-    model_lgb.fit(train_set[features], train_set.answer, eval_set=[(valid_set[features], valid_set.answer)],
+    model_lgb.fit(train_set[features], train_set.label, eval_set=[(valid_set[features], valid_set.label)],
                   early_stopping_rounds=30)
+    test_data['label'] = model_lgb.predict(test_data[features])
+    test_data[['id', 'label']].to_csv('test_answer.csv', index=False)
