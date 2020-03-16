@@ -127,7 +127,7 @@ def score_loss(y_true, y_pred):
     for i in np.eye(3):
         y_true_ = K.constant([list(i)]) * y_true
         y_pred_ = K.constant([list(i)]) * y_pred
-        loss += 0.5 * K.sum(y_true_ * y_pred_) / K.sum(y_true_ + y_pred_ + K.epsilon())
+        loss += (2/3) * K.sum(y_true_ * y_pred_) / K.sum(y_true_ + y_pred_ + K.epsilon())
     return - K.log(loss + K.epsilon())
 
 
@@ -139,7 +139,7 @@ def score_metric(y_true, y_pred):
     for i in range(3):
         y_true_ = K.cast(K.equal(y_true, i), 'float32')
         y_pred_ = K.cast(K.equal(y_pred, i), 'float32')
-        score += 0.5 * K.sum(y_true_ * y_pred_) / K.sum(y_true_ + y_pred_ + K.epsilon())
+        score += (2/3) * K.sum(y_true_ * y_pred_) / K.sum(y_true_ + y_pred_ + K.epsilon())
     return score
 
 
@@ -177,7 +177,6 @@ def predict():
             y = model.predict(X)
             y = y.argmax(axis=1)
             Y.extend(list(y))
-
     d = pd.DataFrame({'id': test_data.id})
     d.loc[:, 'label'] = Y
     d['label'] = d['label'].map({0: 'star', 1: 'galaxy', 2: 'qso'})
@@ -201,7 +200,7 @@ if __name__ == '__main__':
             for i in range(3):
                 R_ = (R == i)
                 T_ = (T == i)
-                score += 0.5 * (R_ * T_).sum() / (R_.sum() + T_.sum() + K.epsilon())
+                score += (2/3) * (R_ * T_).sum() / (R_.sum() + T_.sum() + K.epsilon())
             self.scores.append(score)
             if score >= self.highest:  # 保存最优模型权重
                 self.highest = score
