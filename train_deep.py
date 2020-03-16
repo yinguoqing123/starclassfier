@@ -9,6 +9,13 @@ from keras.models import Model
 import keras.backend as K
 from sklearn.model_selection import train_test_split
 import json
+"""
+初始分数：0.98
+1、流量归一化
+2、数据增强
+3、加入BN
+4、加入差分特征
+"""
 
 np.random.seed(2020)
 
@@ -46,7 +53,7 @@ class Data_Reader:
             for i in range(3):
                 for n in np.random.choice(len(train_data[i]), self.fracs[i]):
                     X.append(train_data[i][n])
-            X = np.expand_dims(np.array(X), 2) / 100.
+            X = np.expand_dims(np.array(X), 2)
             yield X, Y
             X = []
     def for_valid(self):  # 生成验证集
@@ -55,13 +62,13 @@ class Data_Reader:
         for i in range(steps):
             if i == steps-1:
                 X = self.valid_data.iloc[cur:, :][self.features].values
-                X = np.expand_dims(np.array(X), 2)/100
+                X = np.expand_dims(np.array(X), 2)
                 Y = self.valid_data.iloc[cur:, :]['label'].values
                 Y = to_categorical(np.array(Y), 3)
                 yield X, Y
             else:
                 X = self.valid_data.iloc[cur:cur + self.batch_size, :][self.features].values
-                X = np.expand_dims(np.array(X), 2) / 100
+                X = np.expand_dims(np.array(X), 2)
                 Y = self.valid_data.iloc[cur:cur + self.batch_size, :]['label'].values
                 Y = to_categorical(np.array(Y), 3)
                 cur += self.batch_size
@@ -72,6 +79,9 @@ train_data = pd.read_pickle('train_data.pkl')
 train_data.drop(columns=['id'], inplace=True)
 train_data.rename(columns={'answer': 'label'}, inplace=True)
 train_data.label = train_data.label.map({'star': 0, 'galaxy': 1, 'qso': 2})
+features = train_data.columns.tolist()
+features.remove('label')
+train_data.iloc[:][features] = train_data[features].apply(lambda x: x/np.sqrt(sum(x**2)), axis=1)
 train_data, valid_data = train_test_split(train_data, test_size=0.2)
 
 
@@ -143,7 +153,7 @@ def score_metric(y_true, y_pred):
     return score
 
 
-from keras.optimizers import Adam
+from keras.optimizers import Adam, SGD
 
 model.compile(loss='categorical_crossentropy',  # 交叉熵作为loss
               optimizer=Adam(1e-3),
@@ -163,20 +173,22 @@ def predict():
     steps = (len(test_data) + batch_size - 1) // batch_size
     features = test_data.columns.tolist()
     features.remove('id')
+    test_data.iloc[:][features] = test_data[features].apply(lambda x: x / np.sqrt(sum(x ** 2)), axis=1)
     Y = []
     for i in range(steps):
         if i == steps - 1:
             X = test_data.iloc[cur:, :][features].values
-            X = np.expand_dims(np.array(X), 2) / 100
+            X = np.expand_dims(np.array(X), 2)
             y = model.predict(X)
             y = y.argmax(axis=1)
             Y.extend(list(y))
         else:
             X = test_data.iloc[cur:cur + batch_size, :][features].values
-            X = np.expand_dims(np.array(X), 2) / 100
+            X = np.expand_dims(np.array(X), 2)
             y = model.predict(X)
             y = y.argmax(axis=1)
             Y.extend(list(y))
+            cur += batch_size
     d = pd.DataFrame({'id': test_data.id})
     d.loc[:, 'label'] = Y
     d['label'] = d['label'].map({0: 'star', 1: 'galaxy', 2: 'qso'})
@@ -200,7 +212,11 @@ if __name__ == '__main__':
             for i in range(3):
                 R_ = (R == i)
                 T_ = (T == i)
+                precision = (R_*T_).sum()/(R_.sum() + K.epsilon())
+                recall = (R_*T_).sum()/(T_.sum() + K.epsilon())
+                f1_score = (2*precision*recall)/(precision+recall)
                 score += (2/3) * (R_ * T_).sum() / (R_.sum() + T_.sum() + K.epsilon())
+                print(f'{i}类Precision:{precision}, Recall:{recall}, F1:{f1_score}')
             self.scores.append(score)
             if score >= self.highest:  # 保存最优模型权重
                 self.highest = score
@@ -214,7 +230,7 @@ if __name__ == '__main__':
     # 第一阶段训练
     history = model.fit_generator(D.for_train(),
                                   steps_per_epoch=500,
-                                  epochs=50,
+                                  epochs=20,
                                   callbacks=[evaluator])
 
     model.compile(loss=score_loss,  # 换一个loss
@@ -229,6 +245,7 @@ if __name__ == '__main__':
     # 第二阶段训练
     history = model.fit_generator(D.for_train(),
                                   steps_per_epoch=500,
-                                  epochs=50,
+                                  epochs=20,
                                   callbacks=[evaluator])
+    predict()
 
