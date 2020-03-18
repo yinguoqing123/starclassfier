@@ -9,11 +9,15 @@ from keras.models import Model
 import keras.backend as K
 from sklearn.model_selection import train_test_split
 import json
+import gc
+
+
 """
-初始分数：0.98
-1、流量归一化
-2、数据增强
-3、加入BN
+初始分数：0.9816
+1、流量归一化  0.9832
+2、数据增强，改变batch内各个类的比例 0.9819
+3、更改网络结构，去除两个滤波器相减操作 0.9812
+4、更改网络结构，增加差分通道 
 4、加入差分特征
 """
 
@@ -31,21 +35,24 @@ def score_loss(y_true, y_pred):
 # 光谱的存储方式为一个txt存一个样本，txt里边是字符串格式的序列
 # 对于做其他序列分类的读者，只需要知道这里就是生成序列的样本就就行了
 class Data_Reader:
-    def __init__(self, train_data, valid_data):
+    def __init__(self, train_data, valid_data, features, features_diff):
         self.train_data = train_data
         self.valid_data = valid_data
-        self.input_dim = self.train_data.shape[1] - 1
-        self.fracs = [0.8, 0.1, 0.05]  # 每个batch中，每一类的采样比例
+        self.input_dim = 2600
+        self.fracs = [0.7, 0.2, 0.1]  # 每个batch中，每一类的采样比例
         self.batch_size = 160  # batch_size
         for i in range(3):
             self.fracs[i] = int(self.fracs[i] * self.batch_size)
         self.fracs[0] = self.batch_size - np.sum(self.fracs[1:])
-        self.features = self.train_data.columns.tolist()
-        self.features.remove('label')
+        self.features = features
+        self.features_diff = features_diff
     def for_train(self):  # 生成训练集
         train_data = []
         for i in range(3):
-            train_data.append(self.train_data[self.train_data.label==i][self.features].values)
+            train_data.append(np.concatenate([np.expand_dims(self.train_data[self.train_data.label==i][self.features].values, 2),
+                              np.expand_dims(self.train_data[self.train_data.label==i][self.features_diff].values, 2)], 2))
+        del self.train_data
+        gc.collect()
         Y = np.array([0] * self.fracs[0] + [1] * self.fracs[1] + [2] * self.fracs[2])
         Y = to_categorical(np.array(Y), 3)
         while True:
@@ -53,7 +60,7 @@ class Data_Reader:
             for i in range(3):
                 for n in np.random.choice(len(train_data[i]), self.fracs[i]):
                     X.append(train_data[i][n])
-            X = np.expand_dims(np.array(X), 2)
+            X = np.array(X)
             yield X, Y
             X = []
     def for_valid(self):  # 生成验证集
@@ -61,41 +68,63 @@ class Data_Reader:
         steps = (len(self.valid_data)+self.batch_size-1)//self.batch_size
         for i in range(steps):
             if i == steps-1:
-                X = self.valid_data.iloc[cur:, :][self.features].values
-                X = np.expand_dims(np.array(X), 2)
+                X = np.concatenate([np.expand_dims(self.valid_data.iloc[cur:][self.features].values, 2),
+                              np.expand_dims(self.valid_data[cur:][self.features_diff].values, 2)], 2)
                 Y = self.valid_data.iloc[cur:, :]['label'].values
                 Y = to_categorical(np.array(Y), 3)
                 yield X, Y
             else:
-                X = self.valid_data.iloc[cur:cur + self.batch_size, :][self.features].values
-                X = np.expand_dims(np.array(X), 2)
-                Y = self.valid_data.iloc[cur:cur + self.batch_size, :]['label'].values
+                X = np.concatenate([np.expand_dims(self.valid_data.iloc[cur:cur+self.batch_size][self.features].values, 2),
+                                   np.expand_dims(self.valid_data[cur:cur+self.batch_size][self.features_diff].values, 2)], 2)
+                Y = self.valid_data.iloc[cur:cur+self.batch_size, :]['label'].values
                 Y = to_categorical(np.array(Y), 3)
                 cur += self.batch_size
                 yield X, Y
 
-
 train_data = pd.read_pickle('train_data.pkl')
-train_data.drop(columns=['id'], inplace=True)
+train_data.set_index('id', inplace=True)
 train_data.rename(columns={'answer': 'label'}, inplace=True)
 train_data.label = train_data.label.map({'star': 0, 'galaxy': 1, 'qso': 2})
 features = train_data.columns.tolist()
 features.remove('label')
-train_data.iloc[:][features] = train_data[features].apply(lambda x: x/np.sqrt(sum(x**2)), axis=1)
-train_data, valid_data = train_test_split(train_data, test_size=0.2)
 
+train_data_diff = train_data[features].diff(1, axis=1).add_prefix('diff_')
+train_data_diff.iloc[:, 0] = 0 # 第一列nan值填充为0
+train_data_diff.iloc[:] = train_data_diff.apply(lambda x: x/np.sqrt(sum(x**2)), axis=1)
+train_data[features] = train_data[features].apply(lambda x: x/np.sqrt(sum(x**2)), axis=1)
+features_diff = train_data_diff.columns.tolist()
+train_data = train_data.merge(train_data_diff, left_index=True, right_index=True)
+del train_data_diff
+gc.collect()
+train_data, valid_data = train_test_split(train_data, test_size=0.2, stratify=train_data.label)
 
-D = Data_Reader(train_data, valid_data)
+""" 
+# 数据增强
+def  data_aug(data, features, cls):
+    tmp = data[data.label==cls].copy()
+    tmp['variance'] = tmp[features].diff(1, axis=1).median(axis=1)
+    tmp_aug = tmp[features + ['variance']].apply(lambda x: x + np.random.randn() * x.variance * 0.1, axis=1)[
+        features]
+    tmp_aug['label'] = cls
+    return tmp_aug
 
+galaxy_aug = data_aug(train_data, features, 1)
+qso_aug_list = [data_aug(train_data, features, 2) for i in range(4)]
+qso_aug = pd.concat(qso_aug_list)
+
+train_data = pd.concat([train_data, galaxy_aug, qso_aug])
+"""
+
+D = Data_Reader(train_data, valid_data, features, features_diff)
 
 
 def BLOCK(seq, filters):  # 定义网络的Block
-    cnn = Conv1D(filters * 2, 3, padding='SAME', dilation_rate=1, activation='relu')(seq)
-    cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
-    cnn = Conv1D(filters * 2, 3, padding='SAME', dilation_rate=2, activation='relu')(cnn)
-    cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
-    cnn = Conv1D(filters * 2, 3, padding='SAME', dilation_rate=4, activation='relu')(cnn)
-    cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
+    cnn = Conv1D(filters , 3, padding='SAME', dilation_rate=1, activation='relu')(seq)
+    #cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
+    cnn = Conv1D(filters , 3, padding='SAME', dilation_rate=2, activation='relu')(cnn)
+    #cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
+    cnn = Conv1D(filters , 3, padding='SAME', dilation_rate=4, activation='relu')(cnn)
+    #cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
     if int(seq.shape[-1]) != filters:
         seq = Conv1D(filters, 1, padding='SAME')(seq)
     seq = add([seq, cnn])
@@ -103,7 +132,7 @@ def BLOCK(seq, filters):  # 定义网络的Block
 
 
 # 搭建模型，就是常规的CNN加残差加池化
-input_tensor = Input(shape=(D.input_dim, 1))
+input_tensor = Input(shape=(D.input_dim, 2))
 seq = input_tensor
 
 seq = BLOCK(seq, 16)
@@ -126,7 +155,6 @@ seq = GlobalMaxPooling1D()(seq)
 seq = Dense(128, activation='relu')(seq)
 
 output_tensor = Dense(3, activation='softmax')(seq)
-
 model = Model(inputs=[input_tensor], outputs=[output_tensor])
 model.summary()
 
@@ -167,32 +195,80 @@ except:
 
 def predict():
     import time
-    test_data= pd.read_pickle('val_data.pkl')
     cur = 0
-    batch_size = 160
+    batch_size = 320
+    test_data = pd.read_pickle('val_data.pkl')
+    test_data.set_index('id', inplace=True)
     steps = (len(test_data) + batch_size - 1) // batch_size
     features = test_data.columns.tolist()
-    features.remove('id')
-    test_data.iloc[:][features] = test_data[features].apply(lambda x: x / np.sqrt(sum(x ** 2)), axis=1)
+    test_data_diff = test_data.diff(1, aixs=1).add_predix('diff_')
+    test_data_diff.iloc[:, 0] = 0
+    test_data_diff.iloc[:] = test_data_diff.apply(lambda x: x / np.sqrt(sum(x ** 2)), axis=1)
+    test_data[features] = test_data[features].apply(lambda x: x / np.sqrt(sum(x ** 2)), axis=1)
+    features_diff = train_data_diff.columns.tolist()
+    test_data = test_data.merge(test_data_diff, left_index=True, right_index=True)
+    del test_data_diff
+    gc.collect()
     Y = []
+    proba = []
     for i in range(steps):
         if i == steps - 1:
-            X = test_data.iloc[cur:, :][features].values
-            X = np.expand_dims(np.array(X), 2)
+            X = np.concatenate([np.expand_dims(test_data.iloc[cur:][features].values, 2),
+                               np.expand_dims(test_data[cur:][features_diff].values, 2)], 2)
             y = model.predict(X)
+            proba.extend(y)
             y = y.argmax(axis=1)
             Y.extend(list(y))
         else:
-            X = test_data.iloc[cur:cur + batch_size, :][features].values
-            X = np.expand_dims(np.array(X), 2)
+            X = np.concatenate([np.expand_dims(test_data.iloc[cur:cur+batch_size][features].values, 2),
+                               np.expand_dims(test_data[cur:cur+batch_size][features_diff].values, 2)], 2)
             y = model.predict(X)
+            proba.extend(y)
             y = y.argmax(axis=1)
             Y.extend(list(y))
             cur += batch_size
-    d = pd.DataFrame({'id': test_data.id})
+    d = pd.DataFrame({'id': test_data.index})
+    proba = np.array(proba)
     d.loc[:, 'label'] = Y
     d['label'] = d['label'].map({0: 'star', 1: 'galaxy', 2: 'qso'})
+    d.loc[:, 'star'] = proba[:, 0]
+    d.loc[:, 'galaxy'] = proba[:, 1]
+    d.loc[:, 'qso'] = proba[:, 2]
     d.to_csv('result_%s.csv' % (int(time.time())), index=None)
+
+def get_bad_case(valid_data):
+    import time
+    cur = 0
+    batch_size = 320
+    steps = (len(valid_data) + batch_size - 1) // batch_size
+    features = valid_data.columns.tolist()
+    features.remove('label')
+    Y = []
+    proba = []
+    for i in range(steps):
+        if i == steps - 1:
+            X = np.concatenate([np.expand_dims(valid_data.iloc[cur:][features].values, 2),
+                                np.expand_dims(valid_data[cur:][features_diff].values, 2)], 2)
+            y = model.predict(X)
+            proba.extend(y)
+            y = y.argmax(axis=1)
+            Y.extend(list(y))
+        else:
+            X = np.concatenate([np.expand_dims(valid_data.iloc[cur:cur+batch_size][features].values, 2),
+                                np.expand_dims(valid_data[cur:cur+batch_size][features_diff].values, 2)], 2)
+            y = model.predict(X)
+            proba.extend(y)
+            y = y.argmax(axis=1)
+            Y.extend(list(y))
+            cur += batch_size
+    d = pd.DataFrame({'id': valid_data.index})
+    proba = np.array(proba)
+    d.loc[:, 'star'] = proba[:, 0]
+    d.loc[:, 'galaxy'] = proba[:, 1]
+    d.loc[:, 'qso'] = proba[:, 2]
+    d.loc[:, 'label'] = valid_data.label.values
+    d.to_csv('result_proba_%s.csv' % (int(time.time())), index=None)
+
 
 
 if __name__ == '__main__':
@@ -230,7 +306,7 @@ if __name__ == '__main__':
     # 第一阶段训练
     history = model.fit_generator(D.for_train(),
                                   steps_per_epoch=500,
-                                  epochs=20,
+                                  epochs=30,
                                   callbacks=[evaluator])
 
     model.compile(loss=score_loss,  # 换一个loss
@@ -245,7 +321,14 @@ if __name__ == '__main__':
     # 第二阶段训练
     history = model.fit_generator(D.for_train(),
                                   steps_per_epoch=500,
-                                  epochs=20,
+                                  epochs=30,
                                   callbacks=[evaluator])
+    try:
+        model.load_weights('guangpu_highest.model')
+    except:
+        pass
+
     predict()
+    # 保存验证集结果，分析bad case
+    get_bad_case(valid_data)
 
