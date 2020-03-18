@@ -87,15 +87,21 @@ train_data.rename(columns={'answer': 'label'}, inplace=True)
 train_data.label = train_data.label.map({'star': 0, 'galaxy': 1, 'qso': 2})
 features = train_data.columns.tolist()
 features.remove('label')
+features_diff = ['diff_'+feat for feat in features]
 
-train_data_diff = train_data[features].diff(1, axis=1).add_prefix('diff_')
-train_data_diff.iloc[:, 0] = 0 # 第一列nan值填充为0
-train_data_diff.iloc[:] = train_data_diff.apply(lambda x: x/np.sqrt(sum(x**2)), axis=1)
-train_data[features] = train_data[features].apply(lambda x: x/np.sqrt(sum(x**2)), axis=1)
-features_diff = train_data_diff.columns.tolist()
-train_data = train_data.merge(train_data_diff, left_index=True, right_index=True)
-del train_data_diff
-gc.collect()
+# 增加差分特征 流量归一化
+def add_diff_channel(data, features):
+    data_diff = data[features].diff(1, axis=1).add_prefix('diff_')
+    data_diff.iloc[:, 0] = 0  # 第一列nan值填充为0
+    data_diff.iloc[:] = data_diff.apply(lambda x: x / np.sqrt(sum(x ** 2)), axis=1)
+    data[features] = data[features].apply(lambda x: x / np.sqrt(sum(x ** 2)), axis=1)
+    data = data.merge(data_diff, left_index=True, right_index=True)
+    del data_diff
+    gc.collect()
+    return data
+
+train_data = add_diff_channel(train_data, features)
+
 train_data, valid_data = train_test_split(train_data, test_size=0.2, stratify=train_data.label)
 
 """ 
@@ -200,15 +206,8 @@ def predict():
     test_data = pd.read_pickle('val_data.pkl')
     test_data.set_index('id', inplace=True)
     steps = (len(test_data) + batch_size - 1) // batch_size
-    features = test_data.columns.tolist()
-    test_data_diff = test_data.diff(1, aixs=1).add_predix('diff_')
-    test_data_diff.iloc[:, 0] = 0
-    test_data_diff.iloc[:] = test_data_diff.apply(lambda x: x / np.sqrt(sum(x ** 2)), axis=1)
-    test_data[features] = test_data[features].apply(lambda x: x / np.sqrt(sum(x ** 2)), axis=1)
-    features_diff = train_data_diff.columns.tolist()
-    test_data = test_data.merge(test_data_diff, left_index=True, right_index=True)
-    del test_data_diff
-    gc.collect()
+    global features, features_diff
+    test_data = add_diff_channel(test_data, features)
     Y = []
     proba = []
     for i in range(steps):
