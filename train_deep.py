@@ -14,7 +14,7 @@ from keras.losses import  categorical_crossentropy
 
 """
 初始分数：0.9816
-1、流量归一化  0.9832
+1、流量归一化  0.9822
 2、数据增强，改变batch内各个类的比例 0.9819
 3、更改网络结构，去除两个滤波器相减操作 0.9812
 4、更改网络结构，增加差分通道 0.9826 
@@ -73,13 +73,13 @@ class Data_Reader:
         for i in range(steps):
             if i == steps-1:
                 X = np.concatenate([np.expand_dims(self.valid_data.iloc[cur:][self.features].values, 2),
-                              np.expand_dims(self.valid_data[cur:][self.features_diff].values, 2)], 2)
+                              np.expand_dims(self.valid_data.iloc[cur:][self.features_diff].values, 2)], 2)
                 Y = self.valid_data.iloc[cur:, :]['label'].values
                 Y = to_categorical(np.array(Y), 3)
                 yield X, Y
             else:
                 X = np.concatenate([np.expand_dims(self.valid_data.iloc[cur:cur+self.batch_size][self.features].values, 2),
-                                   np.expand_dims(self.valid_data[cur:cur+self.batch_size][self.features_diff].values, 2)], 2)
+                                   np.expand_dims(self.valid_data.iloc[cur:cur+self.batch_size][self.features_diff].values, 2)], 2)
                 Y = self.valid_data.iloc[cur:cur+self.batch_size, :]['label'].values
                 Y = to_categorical(np.array(Y), 3)
                 cur += self.batch_size
@@ -262,14 +262,14 @@ def predict():
     for i in range(steps):
         if i == steps - 1:
             X = np.concatenate([np.expand_dims(test_data.iloc[cur:][features].values, 2),
-                               np.expand_dims(test_data[cur:][features_diff].values, 2)], 2)
+                               np.expand_dims(test_data.iloc[cur:][features_diff].values, 2)], 2)
             y = model.predict(X)
             proba.extend(y)
             y = y.argmax(axis=1)
             Y.extend(list(y))
         else:
             X = np.concatenate([np.expand_dims(test_data.iloc[cur:cur+batch_size][features].values, 2),
-                               np.expand_dims(test_data[cur:cur+batch_size][features_diff].values, 2)], 2)
+                               np.expand_dims(test_data.iloc[cur:cur+batch_size][features_diff].values, 2)], 2)
             y = model.predict(X)
             proba.extend(y)
             y = y.argmax(axis=1)
@@ -289,8 +289,7 @@ def get_bad_case(valid_data):
     cur = 0
     batch_size = 320
     steps = (len(valid_data) + batch_size - 1) // batch_size
-    features = valid_data.columns.tolist()
-    features.remove('label')
+    global features, features_diff
     Y = []
     proba = []
     for i in range(steps):
