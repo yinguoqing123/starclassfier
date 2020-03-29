@@ -55,8 +55,6 @@ class Data_Reader:
         for i in range(3):
             train_data.append(np.concatenate([np.expand_dims(self.train_data[self.train_data.label==i][self.features].values, 2),
                               np.expand_dims(self.train_data[self.train_data.label==i][self.features_diff].values, 2)], 2))
-        del self.train_data
-        gc.collect()
         Y = np.array([0] * self.fracs[0] + [1] * self.fracs[1] + [2] * self.fracs[2])
         Y = to_categorical(np.array(Y), 3)
         while True:
@@ -85,12 +83,8 @@ class Data_Reader:
                 cur += self.batch_size
                 yield X, Y
 
-train_data = pd.read_pickle('train_data.pkl')
-train_data.set_index('id', inplace=True)
-train_data.rename(columns={'answer': 'label'}, inplace=True)
-train_data.label = train_data.label.map({'star': 0, 'galaxy': 1, 'qso': 2})
-features = train_data.columns.tolist()
-features.remove('label')
+
+features = ['FE'+str(i) for i in range(2600)]
 features_diff = ['diff_'+feat for feat in features]
 
 # 增加差分特征 流量归一化
@@ -104,8 +98,15 @@ def add_diff_channel(data, features):
     gc.collect()
     return data
 
-train_data = add_diff_channel(train_data, features)
-
+if not os.path.exists('train_data_normalize.pkl'):
+    train_data = pd.read_pickle('train_data.pkl')
+    train_data.set_index('id', inplace=True)
+    train_data.rename(columns={'answer': 'label'}, inplace=True)
+    train_data.label = train_data.label.map({'star': 0, 'galaxy': 1, 'qso': 2})
+    train_data = add_diff_channel(train_data, features)
+    train_data.to_pickle('train_data_normalize.pkl')
+else:
+    train_data = pd.read_pickle('train_data_normalize.pkl')
 # 这些样本2600维全为1， 出现nan值
 id_list = ['01703e6377847e1232e466ac18c3b77f', '03a7a75a6d27b27a2a4beeb1ef9f83a9',
        '0cd6b854b430974a9cff3caf1fa780ca', '0e44f3c097a1a12f614f4bdb4b10bdf1',
@@ -172,17 +173,45 @@ train_data = pd.concat([train_data, galaxy_aug, qso_aug])
 
 D = Data_Reader(train_data, valid_data, features, features_diff)
 
-
-def BLOCK(seq, filters):  # 定义网络的Block
-    cnn = Conv1D(filters , 3, padding='SAME', dilation_rate=1, activation='relu')(seq)
-    #cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
-    cnn = Conv1D(filters , 3, padding='SAME', dilation_rate=2, activation='relu')(cnn)
-    #cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
-    cnn = Conv1D(filters , 3, padding='SAME', dilation_rate=4, activation='relu')(cnn)
-    #cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
-    if int(seq.shape[-1]) != filters:
-        seq = Conv1D(filters, 1, padding='SAME')(seq)
-    seq = add([seq, cnn])
+def BLOCK(seq, filters, n1, n2=1):  # 定义网络的Block
+    # 分组卷积
+    batch_size, steps, channels = K.int_shape(seq)
+    if n1 <=n2:
+        seq_0 = Lambda(lambda seq: seq[:, :, :channels//2])(seq)
+        seq_diff = Lambda(lambda seq: seq[:, :, channels//2:])(seq)
+        cnn_diff = Conv1D(filters, 3, padding='SAME', dilation_rate=1, activation='relu')(seq_diff)
+        # cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
+        cnn_diff = Conv1D(filters, 3, padding='SAME', dilation_rate=2, activation='relu')(cnn_diff)
+        # cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
+        cnn_diff = Conv1D(filters, 3, padding='SAME', dilation_rate=4, activation='relu')(cnn_diff)
+        cnn = Conv1D(filters , 3, padding='SAME', dilation_rate=1, activation='relu')(seq_0)
+        #cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
+        cnn = Conv1D(filters , 3, padding='SAME', dilation_rate=2, activation='relu')(cnn)
+        #cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
+        cnn = Conv1D(filters , 3, padding='SAME', dilation_rate=4, activation='relu')(cnn)
+        #cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
+        if n1 == n2:
+            cnn = Lambda(lambda x: K.concatenate([x[0], x[1]], axis=2))([cnn, cnn_diff])
+            cnn = Conv1D(filters, 1, padding='SAME', activation='relu')(cnn)
+            if channels != filters:
+                seq = Conv1D(filters, 1, padding='SAME')(seq)
+            seq = add([seq, cnn])
+        else:
+            if channels != filters:
+                seq_0 = Conv1D(filters, 1, padding='SAME')(seq_0)
+                seq_diff = Conv1D(filters, 1, padding='SAME')(seq_diff)
+            seq_0 = add([seq_0, cnn])
+            seq_diff = add([seq_diff, cnn_diff])
+            seq = Lambda(lambda x: K.concatenate([x[0], x[1]], axis=2))([seq_0, seq_diff])
+    else:
+        cnn = Conv1D(filters, 3, padding='SAME', dilation_rate=1, activation='relu')(seq)
+        # cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
+        cnn = Conv1D(filters, 3, padding='SAME', dilation_rate=2, activation='relu')(cnn)
+        # cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
+        cnn = Conv1D(filters, 3, padding='SAME', dilation_rate=4, activation='relu')(cnn)
+        if int(seq.shape[-1]) != filters:
+            seq = Conv1D(filters, 1, padding='SAME')(seq)
+        seq = add([seq, cnn])
     return seq
 
 
@@ -190,21 +219,21 @@ def BLOCK(seq, filters):  # 定义网络的Block
 input_tensor = Input(shape=(D.input_dim, 2))
 seq = input_tensor
 
-seq = BLOCK(seq, 16)
+seq = BLOCK(seq, 16, 1)
 seq = MaxPooling1D(2)(seq)
-seq = BLOCK(seq, 16)
+seq = BLOCK(seq, 16, 2)
 seq = MaxPooling1D(2)(seq)
-seq = BLOCK(seq, 32)
+seq = BLOCK(seq, 32, 3)
 seq = MaxPooling1D(2)(seq)
-seq = BLOCK(seq, 32)
+seq = BLOCK(seq, 32, 4)
 seq = MaxPooling1D(2)(seq)
-seq = BLOCK(seq, 64)
+seq = BLOCK(seq, 64, 5)
 seq = MaxPooling1D(2)(seq)
-seq = BLOCK(seq, 64)
+seq = BLOCK(seq, 64, 6)
 seq = MaxPooling1D(2)(seq)
-seq = BLOCK(seq, 128)
+seq = BLOCK(seq, 128, 7)
 seq = MaxPooling1D(2)(seq)
-seq = BLOCK(seq, 128)
+seq = BLOCK(seq, 128, 8)
 seq = Dropout(0.5, (D.batch_size, int(seq.shape[1]), 1))(seq)
 seq = GlobalMaxPooling1D()(seq)
 seq = Dense(128, activation='relu')(seq)
@@ -357,7 +386,7 @@ if __name__ == '__main__':
                                   callbacks=[evaluator])
 
     model.compile(loss=score_loss,  # 换一个loss
-                  optimizer=Adam(1e-4),
+                  optimizer=SGD(1e-4),
                   metrics=[score_metric])
 
     try:
