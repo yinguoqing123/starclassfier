@@ -18,7 +18,7 @@ from keras.losses import  categorical_crossentropy
 2、数据增强，改变batch内各个类的比例 0.9819
 3、更改网络结构，去除两个滤波器相减操作 0.9812
 4、更改网络结构，增加差分通道 0.9826 
-4、加入差分特征
+5、将验证集中小样本加入训练 
 
 relu+softmax_entrypy： loss出现nan值，
 原因：数据中出现了nan值
@@ -154,7 +154,8 @@ id_list = ['01703e6377847e1232e466ac18c3b77f', '03a7a75a6d27b27a2a4beeb1ef9f83a9
 train_data = train_data[~train_data.index.isin(id_list)]
 train_data, valid_data = train_test_split(train_data, test_size=0.2, stratify=train_data.label, random_state=2020)
 
-""" 
+# 训练集中加入valid_data中的galaxy和qso样本
+train_data = pd.concat([train_data, valid_data.loc[valid_data.label!=0]])
 # 数据增强
 def  data_aug(data, features, cls):
     tmp = data[data.label==cls].copy()
@@ -164,6 +165,7 @@ def  data_aug(data, features, cls):
     tmp_aug['label'] = cls
     return tmp_aug
 
+"""
 galaxy_aug = data_aug(train_data, features, 1)
 qso_aug_list = [data_aug(train_data, features, 2) for i in range(4)]
 qso_aug = pd.concat(qso_aug_list)
@@ -173,7 +175,7 @@ train_data = pd.concat([train_data, galaxy_aug, qso_aug])
 
 D = Data_Reader(train_data, valid_data, features, features_diff)
 
-def BLOCK(seq, filters, n1, n2=1):  # 定义网络的Block
+def BLOCK(seq, filters, n1, n2=0):  # 定义网络的Block
     # 分组卷积
     batch_size, steps, channels = K.int_shape(seq)
     if n1 <=n2:

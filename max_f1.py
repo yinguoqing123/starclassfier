@@ -29,6 +29,7 @@ test_result.star = yz[0]*test_result.star.values
 test_result.galaxy = yz[1]*test_result.galaxy.values
 test_result.qso = yz[2]*test_result.qso.values
 test_result.label = np.argmax(test_result[['star', 'galaxy', 'qso']].values, axis=1)
+test_result.label = test_result.label.map({0: 'star', 1: 'galaxy', 2 : 'qso' })
 test_result[['id', 'label']].to_csv('test_xz.csv', index=False)
 
 
