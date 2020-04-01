@@ -279,15 +279,19 @@ except:
     pass
 
 
-def predict():
+def predict(datafile='val_data.pkl'):
     import time
     cur = 0
     batch_size = 320
-    test_data = pd.read_pickle('val_data.pkl')
-    test_data.set_index('id', inplace=True)
-    steps = (len(test_data) + batch_size - 1) // batch_size
     global features, features_diff
-    test_data = add_diff_channel(test_data, features)
+    if os.path.exists('{}_normalize.pkl'.format(datafile[:8])):
+        test_data = pd.read_pickle('{}_normalize.pkl'.format(datafile[:8]))
+    else:
+        test_data = pd.read_pickle(datafile)
+        test_data.set_index('id', inplace=True)
+        test_data = add_diff_channel(test_data, features)
+        test_data.to_pickle('{}_normalize.pkl'.format(datafile[:8]))
+    steps = (len(test_data) + batch_size - 1) // batch_size
     Y = []
     proba = []
     for i in range(steps):
@@ -406,7 +410,7 @@ if __name__ == '__main__':
     except:
         pass
 
-    predict()
+    predict(datafile='test_data.pkl')
     # 保存验证集结果，分析bad case
     get_bad_case(valid_data)
 

@@ -13,6 +13,8 @@ from sklearn.metrics import f1_score, roc_auc_score
 from bayes_opt import BayesianOptimization
 import argparse
 import warnings
+import joblib
+import os
 warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser()
@@ -31,7 +33,18 @@ features.remove('label')
 if args.search:
     _, train_data = train_test_split(train_data, test_size=0.2, stratify=train_data.label)
 
-train_set, valid_set = train_test_split(train_data, test_size=0.2, stratify=train_data.label)
+if os.path.exists('result_proba_1585479113.csv'):
+    valid_sample = pd.read_csv('result_proba_1585479113.csv')
+    train_set = train_data[~train_data.id.isin(valid_sample.id)]
+    valid_set = train_data[train_data.id.isin(valid_sample.id)]
+    # 降采样 缩短训练时间
+    train_set_class0 = train_set[train_set.label==0].sample(0.5)
+    train_set = pd.concat([train_set[train_data.label!=0], train_set_class0])
+else:
+    # 降采样 缩短训练时间
+    train_set_class0 = train_data[train_data.label == 0].sample(0.5)
+    train_set = pd.concat([train_data[train_data.label != 0], train_set_class0])
+    train_set, valid_set = train_test_split(train_set, test_size=0.2, stratify=train_data.label)
 print('train set 样本量：', train_set.shape[0])
 
 #train_set.loc[:, features] = train_set[features].astype(np.float32)
@@ -102,11 +115,12 @@ elif args.search=='beyas':
     print('再次精调后最佳AUC:{}'.format(result.max['target']))
     print('再次精调后最佳参数：', '\n', result.max['params'])
 else:
-    model_lgb = lgb.LGBMClassifier(n_estimators=950, max_depth=9, num_leaves=15, n_jobs=-1, learning_rate=0.05,
+    model_lgb = lgb.LGBMClassifier(boosting_type='goss',n_estimators=950, max_depth=9, num_leaves=15, n_jobs=-1, learning_rate=0.05,
                                    colsample_bytree=0.3, subsample=0.6, reg_lambda=0.9, reg_alpha=1.3,
-                                   min_child_weight=5,
+                                   min_child_weight=5, class_weight={0: 1, 1: 2, 2: 3},
                                    random_state=2019)
     model_lgb.fit(train_set[features], train_set.label, eval_set=[(valid_set[features], valid_set.label)],
                   early_stopping_rounds=30)
+    joblib.dump(model_lgb, 'model_lgb.txt')
     test_data['label'] = model_lgb.predict(test_data[features])
     test_data[['id', 'label']].to_csv('test_answer.csv', index=False)
