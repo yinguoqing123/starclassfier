@@ -22,7 +22,7 @@ parser.add_argument("--search", help="search hyper parameters or not")
 args = parser.parse_args()
 
 train_data = pd.read_pickle('train_feature.pkl')
-test_data = pd.read_pickle('val_feature.pkl')
+test_data = pd.read_pickle('test_b_feature.pkl')
 
 features = train_data.columns.tolist()
 features.remove('id')
@@ -38,8 +38,8 @@ if os.path.exists('result_proba_1585479113.csv'):
     train_set = train_data[~train_data.id.isin(valid_sample.id)]
     valid_set = train_data[train_data.id.isin(valid_sample.id)]
     # 降采样 缩短训练时间
-    train_set_class0 = train_set[train_set.label==0].sample(0.5)
-    train_set = pd.concat([train_set[train_data.label!=0], train_set_class0])
+    #train_set_class0 = train_set[train_set.label==0].sample(frac=0.5)
+    #train_set = pd.concat([train_set[train_data.label!=0], train_set_class0])
 else:
     # 降采样 缩短训练时间
     train_set_class0 = train_data[train_data.label == 0].sample(0.5)
@@ -87,6 +87,11 @@ def param_tuning(init_points,num_iter,**args):
     lgbBO.maximize(init_points=init_points, n_iter=num_iter,**args)
     return lgbBO
 
+def macro_f1_score(y_ture, y_pred):
+    y_pred = y_pred.reshape(-1, 3)
+    y_pred = list(np.argmax(np.reshape(y_pred, (-1, 3)), axis=1))
+    return f1_score(list(y_ture), y_pred, average='macro')
+
 if  args.search=='random':
     param_dict = {'n_estimators': range(300, 1000, 50), 'num_leaves': range(15, 50, 5),'max_depth': range(5, 10, 1),
                   'learning_rate': np.arange(0.05, 0.3, 0.05), 'subsample': np.arange(0.6, 1.0, 0.1),
@@ -115,12 +120,26 @@ elif args.search=='beyas':
     print('再次精调后最佳AUC:{}'.format(result.max['target']))
     print('再次精调后最佳参数：', '\n', result.max['params'])
 else:
-    model_lgb = lgb.LGBMClassifier(boosting_type='goss',n_estimators=950, max_depth=9, num_leaves=15, n_jobs=-1, learning_rate=0.05,
+    print(time.time())
+    model_lgb = lgb.LGBMClassifier(boosting_type='goss',n_estimators=1000, max_depth=9, num_leaves=15, n_jobs=-1, learning_rate=0.05,
                                    colsample_bytree=0.3, subsample=0.6, reg_lambda=0.9, reg_alpha=1.3,
                                    min_child_weight=5, class_weight={0: 1, 1: 2, 2: 3},
                                    random_state=2019)
     model_lgb.fit(train_set[features], train_set.label, eval_set=[(valid_set[features], valid_set.label)],
                   early_stopping_rounds=30)
     joblib.dump(model_lgb, 'model_lgb.txt')
+    #model_lgb = joblib.load('model_lgb.txt')
+    valid_proba = model_lgb.predict_proba(valid_set[features])
+    valid_set['star'] = valid_proba[:, 0]
+    valid_set['galaxy'] = valid_proba[:, 1]
+    valid_set['qso'] = valid_proba[:, 2]
+    valid_set['pred'] = model_lgb.predict(valid_set[features])
+    print("验证集f1：", f1_score(valid_set.label.values, valid_set.pred.values, average='macro'))
     test_data['label'] = model_lgb.predict(test_data[features])
-    test_data[['id', 'label']].to_csv('test_answer.csv', index=False)
+    probability = model_lgb.predict_proba(test_data[features])
+    test_data['star'] = probability[:, 0]
+    test_data['galaxy'] = probability[:, 1]
+    test_data['qso'] = probability[:, 2]
+    test_data[['id', 'label', 'star', 'galaxy', 'qso']].to_csv('test_tree_answer.csv', index=False)
+    valid_set[['id', 'label', 'star', 'galaxy', 'qso', 'pred']].to_csv('valid_tree_answer.csv', index=False)
+    print(time.time())

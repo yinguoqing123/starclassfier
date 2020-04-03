@@ -14,12 +14,14 @@ from keras.losses import  categorical_crossentropy
 
 """
 初始分数：0.9816
-1、流量归一化  0.9822
+1、流量归一化  有提升
 2、数据增强，改变batch内各个类的比例 0.9819
 3、更改网络结构，去除两个滤波器相减操作 0.9812
-4、更改网络结构，增加差分通道 0.9826 
-5、将验证集中小样本加入训练 
+4、更改网络结构，增加差分通道 0.9829
+5、将验证集中小样本加入训练 0.940 不知道是否存在过拟合风险，未在线上提交，max_f1优化后为0.962
+6、将a榜数据加入训练  
 
+只根据4提交了结果 线上0.9826
 relu+softmax_entrypy： loss出现nan值，
 原因：数据中出现了nan值
 """
@@ -155,8 +157,24 @@ train_data = train_data[~train_data.index.isin(id_list)]
 train_data, valid_data = train_test_split(train_data, test_size=0.2, stratify=train_data.label, random_state=2020)
 
 # 训练集中加入valid_data中的galaxy和qso样本
-train_data = pd.concat([train_data, valid_data.loc[valid_data.label!=0]])
-# 数据增强
+#train_data = pd.concat([train_data, valid_data.loc[valid_data.label!=0]])
+
+# 训练集中加入线上预测结果
+add_offline_label = pd.read_csv('result_proba_1585479113.csv')
+add_offline_label = add_offline_label[['id', 'label']]
+
+if os.path.exists('val_data_normalize.pkl'):
+    add_offline = pd.read_pickle('val_data_normalize.pkl')
+else:
+    add_offline = pd.read_pickle('val_data.pkl')
+    add_offline.set_index('id', inplace=True)
+    add_offline = add_diff_channel(add_offline, features)
+    add_offline.to_pickle('val_data_normalize.pkl')
+
+add_offline = add_offline.merge(add_offline_label, right_on='id', left_index=True)
+train_data = pd.concat([train_data, add_offline[add_offline.label!=0]])
+
+#数据增强
 def  data_aug(data, features, cls):
     tmp = data[data.label==cls].copy()
     tmp['variance'] = tmp[features].diff(1, axis=1).median(axis=1)
@@ -211,6 +229,7 @@ def BLOCK(seq, filters, n1, n2=0):  # 定义网络的Block
         cnn = Conv1D(filters, 3, padding='SAME', dilation_rate=2, activation='relu')(cnn)
         # cnn = Lambda(lambda x: x[:, :, :filters] + x[:, :, filters:])(cnn)
         cnn = Conv1D(filters, 3, padding='SAME', dilation_rate=4, activation='relu')(cnn)
+        cnn = Conv1D(filters, 3, padding='SAME', dilation_rate=6, activation='relu')(cnn)
         if int(seq.shape[-1]) != filters:
             seq = Conv1D(filters, 1, padding='SAME')(seq)
         seq = add([seq, cnn])
@@ -392,7 +411,7 @@ if __name__ == '__main__':
                                   callbacks=[evaluator])
 
     model.compile(loss=score_loss,  # 换一个loss
-                  optimizer=SGD(1e-4),
+                  optimizer=Adam(1e-4),
                   metrics=[score_metric])
 
     try:

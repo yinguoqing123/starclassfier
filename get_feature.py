@@ -178,6 +178,7 @@ for fea in ['FE' + str(i) for i in range(2600)]:
 train_dtypes['answer'] = np.str
 train_dtypes['id'] = np.str
 val_dtypes['id'] = np.str
+
 train_data = pd.read_pickle('train_data.pkl')
 train_data.answer = train_data.answer.map({'star': 0, 'galaxy': 1, 'qso': 2})
 print('train data memory before:', train_data.info(memory_usage='deep'))
@@ -186,7 +187,7 @@ print('train data memory after:', train_data.info(memory_usage='deep'))
 
 #数据集不均衡  start:galaxy:qso = 0.839 : 0.122: 0.038
 
-val_data = pd.read_pickle('val_data.pkl')
+val_data = pd.read_pickle('test_data.pkl')
 print('test data memory before:', val_data.info(memory_usage='deep'))
 val_data = val_data.astype(val_dtypes, copy=False)
 print('test data memory after:', val_data.info(memory_usage='deep'))
@@ -202,3 +203,8 @@ val_data = val_data.set_index('id')
 get_moving_windows_features(val_data, flag='val')
 print('验证集处理时间为{}分钟'.format((time.time()-train_end_time)/60))
 
+
+val_data = pd.read_pickle('test_data_b.pkl')
+val_data = val_data.astype(val_dtypes, copy=False)
+val_data = val_data.set_index('id')
+get_moving_windows_features(val_data, flag='test_b')
